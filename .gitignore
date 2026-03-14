@@ -1,0 +1,30 @@
+# Dependencies
+node_modules/
+farmpulse/node_modules/
+
+# Python
+backend/venv/
+backend/__pycache__/
+*.pyc
+*.pyo
+
+# Environment files
+.env
+.env.local
+.env.production
+
+# Build output
+farmpulse/dist/
+farmpulse/build/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
