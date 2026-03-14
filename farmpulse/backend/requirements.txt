@@ -1,0 +1,9 @@
+fastapi
+uvicorn
+earthengine-api
+transformers
+Pillow
+torch
+# xgboost
+# scikit-learn
+# pandas
