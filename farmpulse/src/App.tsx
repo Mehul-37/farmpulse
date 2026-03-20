@@ -8,6 +8,7 @@ import Alerts from './pages/Alerts';
 import InstitutionalReport from './pages/InstitutionalReport';
 import Simulator from './pages/Simulator';
 import VisionAI from './pages/VisionAI';
+import RiskCalculator from './pages/RiskCalculator';
 
 function App() {
   return (
@@ -23,6 +24,7 @@ function App() {
           <Route path="report" element={<InstitutionalReport />} />
           <Route path="simulator" element={<Simulator />} />
           <Route path="vision" element={<VisionAI />} />
+          <Route path="calculator" element={<RiskCalculator />} />
         </Route>
       </Routes>
     </Router>

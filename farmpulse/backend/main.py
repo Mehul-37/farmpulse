@@ -7,6 +7,7 @@ from services.database import save_profile, get_profile
 from services.risk_model import calculate_risk_score
 from services.satellite import get_ndvi, init_gee
 from services.vision import analyze_crop_photo
+from services.weather import get_weather_data
 
 app = FastAPI(
     title="FarmPulse API",
@@ -46,6 +47,11 @@ def predict_risk(profile: FarmProfile):
     score_data = calculate_risk_score(profile.data)
     return {"status": "success", "risk_evaluation": score_data}
 
+@app.get("/api/predict")
+def api_predict_get(district: str, crop: str):
+    # Endpoint accepting district + crop params
+    return {"status": "success", "district": district, "crop": crop, "message": "Predict endpoint active"}
+
 @app.post("/analyze-photo")
 async def analyze_photo(file: UploadFile = File(...)):
     contents = await file.read()
@@ -57,6 +63,10 @@ def fetch_satellite_data(lat: float, lng: float):
     # In a real scenario we'd pass dates
     val = get_ndvi(lat, lng, "2024-01-01", "2024-01-31")
     return {"ndvi": val}
+
+@app.get("/api/weather/{lat}/{lng}")
+def fetch_weather_data(lat: float, lng: float):
+    return get_weather_data(lat, lng)
 
 @app.get("/farm/{id}")
 def get_farm_details(id: str):

@@ -1,10 +1,22 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { mockFarms, Farm } from '../data/mockData';
-import { Search, X, Upload, Loader2 } from 'lucide-react';
+import { Search, X, Upload, Loader2, Info } from 'lucide-react';
+import { useSearchParams } from 'react-router-dom';
 
 export default function FarmProfiles() {
+    const [searchParams] = useSearchParams();
     const [search, setSearch] = useState('');
     const [selectedFarm, setSelectedFarm] = useState<Farm | null>(null);
+
+    useEffect(() => {
+        const id = searchParams.get('id');
+        if (id) {
+            const farm = mockFarms.find(f => f.id === id);
+            if (farm) {
+                setSelectedFarm(farm);
+            }
+        }
+    }, [searchParams]);
     const [isAnalyzing, setIsAnalyzing] = useState(false);
     const [analysisResult, setAnalysisResult] = useState<any>(null);
     const [uploadedImage, setUploadedImage] = useState<string | null>(null);
@@ -169,7 +181,18 @@ export default function FarmProfiles() {
                             {/* Risk Score */}
                             <div className="bg-surface-2 p-6 rounded-[12px] border border-border mb-8">
                                 <div className="flex items-center justify-between mb-4">
-                                    <h4 className="font-semibold text-text-main">Current Risk Score</h4>
+                                    <div className="flex items-center gap-2">
+                                        <h4 className="font-semibold text-text-main">Current Risk Score</h4>
+                                        <div className="group relative flex items-center z-10">
+                                            <Info size={16} className="text-text-muted hover:text-text-main cursor-help transition-colors" />
+                                            <div className="absolute left-1/2 -translate-x-1/2 bottom-[calc(100%+8px)] opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none w-64 bg-surface-1 border border-border shadow-2xl rounded-lg p-3 z-50">
+                                                <p className="text-xs text-text-main leading-relaxed">
+                                                    Score is {selectedFarm.riskScore} because {selectedFarm.ndviBaselineDiff < 0 ? `NDVI is ${Math.abs(selectedFarm.ndviBaselineDiff)}% below baseline` : 'NDVI is tracking normally'}, combined with {selectedFarm.rainfall14Days < 20 ? 'sub-optimal' : 'adequate'} recent rainfall ({selectedFarm.rainfall14Days}mm) and a temperature anomaly of {selectedFarm.tempAnomaly > 0 ? '+' : ''}{selectedFarm.tempAnomaly}°C.
+                                                </p>
+                                                <div className="absolute -bottom-1.5 left-1/2 -translate-x-1/2 w-3 h-3 bg-surface-1 border-b border-r border-border transform rotate-45"></div>
+                                            </div>
+                                        </div>
+                                    </div>
                                     <span className={`px-2.5 py-1 rounded text-xs font-bold ${selectedFarm.riskScore > 65 ? 'bg-[#EF4444] text-white' :
                                         selectedFarm.riskScore > 40 ? 'bg-[#F59E0B] text-white' :
                                             'bg-[#22C55E] text-white'
@@ -188,6 +211,28 @@ export default function FarmProfiles() {
                                         }}
                                     />
                                 </div>
+
+                                {/* 8-Week Trend Sparkline */}
+                                {selectedFarm.riskHistory && (
+                                    <div className="mb-6 bg-surface-1 p-4 rounded-xl border border-border">
+                                        <div className="flex justify-between items-center mb-3">
+                                            <span className="text-xs text-text-muted font-medium uppercase tracking-wider">8-Week Trend</span>
+                                        </div>
+                                        <div className="h-12 w-full relative">
+                                            <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="w-full h-full overflow-visible">
+                                                <polyline
+                                                    fill="none"
+                                                    stroke={selectedFarm.riskScore > 65 ? '#EF4444' : selectedFarm.riskScore > 40 ? '#F59E0B' : '#22C55E'}
+                                                    strokeWidth="2"
+                                                    strokeLinecap="round"
+                                                    strokeLinejoin="round"
+                                                    vectorEffect="non-scaling-stroke"
+                                                    points={selectedFarm.riskHistory.map((val, i, arr) => `${(i / (arr.length - 1)) * 100},${100 - val}`).join(' ')}
+                                                />
+                                            </svg>
+                                        </div>
+                                    </div>
+                                )}
 
                                 <div className="space-y-3">
                                     <div className="flex items-center justify-between text-sm">
@@ -233,75 +278,77 @@ export default function FarmProfiles() {
                             </div>
 
                             {/* Photo Analysis */}
-                            <div className="mb-4">
-                                <h4 className="font-semibold text-text-main mb-4">Ground Truth Photo & AI Analysis</h4>
-                                
-                                <input 
-                                    type="file" 
-                                    accept="image/*" 
-                                    className="hidden" 
-                                    ref={fileInputRef}
-                                    onChange={handleFileUpload}
-                                />
-                                
-                                {uploadedImage ? (
-                                    <div className="bg-surface-2 border border-[#22C55E]/20 rounded-[12px] p-1 overflow-hidden relative">
-                                        <div 
-                                            className="h-48 bg-cover bg-center rounded-lg relative"
-                                            style={{ backgroundImage: `url(${uploadedImage})` }}
-                                        >
-                                            <div className="absolute inset-0 bg-gradient-to-t from-black/90 to-transparent flex items-end p-4">
-                                                {isAnalyzing ? (
-                                                    <div className="flex items-center gap-2 text-white">
-                                                        <Loader2 className="animate-spin text-[#22C55E]" size={16} />
-                                                        <span className="text-sm">Running PlantVillage Model...</span>
-                                                    </div>
-                                                ) : analysisResult ? (
-                                                    <div className="text-white text-xs space-y-1.5 w-full">
-                                                        {analysisResult.error ? (
-                                                            <p className="font-semibold text-[#EF4444]">Analysis Failed: {analysisResult.error}</p>
-                                                        ) : (
-                                                            <>
-                                                                <div className="flex justify-between items-center w-full mb-1">
-                                                                    <p className="font-bold text-[#22C55E] text-sm uppercase tracking-wide">Analysis Complete</p>
-                                                                    <span className={`px-2 py-0.5 rounded font-bold ${analysisResult.is_healthy ? 'bg-[#22C55E]/20 text-[#22C55E]' : 'bg-[#EF4444]/20 text-[#EF4444]'}`}>
-                                                                        {analysisResult.is_healthy ? 'Healthy' : analysisResult.stress_type.toUpperCase().replace('_', ' ')}
-                                                                    </span>
-                                                                </div>
-                                                                <div className="bg-black/40 p-2 rounded backdrop-blur-sm border border-white/10">
-                                                                    <p><span className="text-white/60">Detection:</span> {analysisResult.detected_condition}</p>
-                                                                    <p><span className="text-white/60">Crop:</span> {analysisResult.crop_detected}</p>
-                                                                    <p><span className="text-white/60">Confidence:</span> {analysisResult.confidence}%</p>
-                                                                </div>
-                                                            </>
-                                                        )}
-                                                    </div>
-                                                ) : null}
+                            {selectedFarm.riskScore > 65 && (
+                                <div className="mb-4">
+                                    <h4 className="font-semibold text-text-main mb-4">Satellite Validation Result</h4>
+                                    
+                                    <input 
+                                        type="file" 
+                                        accept="image/*" 
+                                        className="hidden" 
+                                        ref={fileInputRef}
+                                        onChange={handleFileUpload}
+                                    />
+                                    
+                                    {uploadedImage ? (
+                                        <div className="bg-surface-2 border border-[#22C55E]/20 rounded-[12px] p-1 overflow-hidden relative">
+                                            <div 
+                                                className="h-48 bg-cover bg-center rounded-lg relative"
+                                                style={{ backgroundImage: `url(${uploadedImage})` }}
+                                            >
+                                                <div className="absolute inset-0 bg-gradient-to-t from-black/90 to-transparent flex items-end p-4">
+                                                    {isAnalyzing ? (
+                                                        <div className="flex items-center gap-2 text-white">
+                                                            <Loader2 className="animate-spin text-[#22C55E]" size={16} />
+                                                            <span className="text-sm">Running PlantVillage Model...</span>
+                                                        </div>
+                                                    ) : analysisResult ? (
+                                                        <div className="text-white text-xs space-y-1.5 w-full">
+                                                            {analysisResult.error ? (
+                                                                <p className="font-semibold text-[#EF4444]">Validation Failed: {analysisResult.error}</p>
+                                                            ) : (
+                                                                <>
+                                                                    <div className="flex justify-between items-center w-full mb-1">
+                                                                        <p className="font-bold text-[#22C55E] text-sm uppercase tracking-wide">Validation Complete</p>
+                                                                        <span className={`px-2 py-0.5 rounded font-bold ${analysisResult.is_healthy ? 'bg-[#22C55E]/20 text-[#22C55E]' : 'bg-[#EF4444]/20 text-[#EF4444]'}`}>
+                                                                            {analysisResult.is_healthy ? 'Healthy' : analysisResult.stress_type.toUpperCase().replace('_', ' ')}
+                                                                        </span>
+                                                                    </div>
+                                                                    <div className="bg-black/40 p-2 rounded backdrop-blur-sm border border-white/10">
+                                                                        <p><span className="text-white/60">Detection:</span> {analysisResult.detected_condition}</p>
+                                                                        <p><span className="text-white/60">Crop:</span> {analysisResult.crop_detected}</p>
+                                                                        <p><span className="text-white/60">Confidence:</span> {analysisResult.confidence}%</p>
+                                                                    </div>
+                                                                </>
+                                                            )}
+                                                        </div>
+                                                    ) : null}
+                                                </div>
                                             </div>
+                                            <button 
+                                                onClick={() => { setUploadedImage(null); setAnalysisResult(null); }}
+                                                className="absolute top-2 right-2 bg-black/60 hover:bg-black p-1.5 rounded-full text-white backdrop-blur-sm transition-colors"
+                                            >
+                                                <X size={14} />
+                                            </button>
                                         </div>
-                                        <button 
-                                            onClick={() => { setUploadedImage(null); setAnalysisResult(null); }}
-                                            className="absolute top-2 right-2 bg-black/60 hover:bg-black p-1.5 rounded-full text-white backdrop-blur-sm transition-colors"
+                                    ) : (
+                                        <div 
+                                            onClick={() => fileInputRef.current?.click()}
+                                            className="bg-surface-2 border border-border border-dashed hover:border-[#22C55E]/50 rounded-[12px] flex flex-col items-center justify-center h-40 text-center px-6 transition-colors cursor-pointer group"
                                         >
-                                            <X size={14} />
-                                        </button>
-                                    </div>
-                                ) : (
-                                    <div 
-                                        onClick={() => fileInputRef.current?.click()}
-                                        className="bg-surface-2 border border-border border-dashed hover:border-[#22C55E]/50 rounded-[12px] flex flex-col items-center justify-center h-40 text-center px-6 transition-colors cursor-pointer group"
-                                    >
-                                        <div className="w-10 h-10 rounded-full bg-surface-1 group-hover:bg-[#22C55E]/10 flex items-center justify-center mb-3 transition-colors">
-                                            <Upload size={18} className="text-text-muted group-hover:text-[#22C55E] transition-colors" />
+                                            <div className="w-10 h-10 rounded-full bg-surface-1 group-hover:bg-[#22C55E]/10 flex items-center justify-center mb-3 transition-colors">
+                                                <Upload size={18} className="text-text-muted group-hover:text-[#22C55E] transition-colors" />
+                                            </div>
+                                            <p className="text-sm font-medium text-text-main mb-1">Upload crop photo for satellite validation</p>
+                                            <p className="text-xs text-text-muted mb-4">Uses HuggingFace PlantVillage model</p>
+                                            <span className="text-xs font-medium bg-text-main text-background px-4 py-2 rounded-lg group-hover:opacity-80 transition-colors">
+                                                Select Image
+                                            </span>
                                         </div>
-                                        <p className="text-sm font-medium text-text-main mb-1">Upload crop photo for AI analysis</p>
-                                        <p className="text-xs text-text-muted mb-4">Uses HuggingFace PlantVillage model</p>
-                                        <span className="text-xs font-medium bg-text-main text-background px-4 py-2 rounded-lg group-hover:opacity-80 transition-colors">
-                                            Select Image
-                                        </span>
-                                    </div>
-                                )}
-                            </div>
+                                    )}
+                                </div>
+                            )}
 
                         </div>
                     </div>

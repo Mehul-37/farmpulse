@@ -26,6 +26,7 @@ export interface Farm {
     ndviBaselineDiff: number;
     rainfall14Days: number; // mm
     tempAnomaly: number; // deg C
+    riskHistory: number[];
 }
 
 const firstNames = ['Ramesh', 'Suresh', 'Gurpreet', 'Harpreet', 'Manjeet', 'Rajesh', 'Vinod', 'Prakash', 'Amit', 'Sunil', 'Balwinder', 'Karamjit', 'Jagdish', 'Kuldeep', 'Surjit'];
@@ -94,6 +95,12 @@ const generateFarms = (count: number): Farm[] => {
 
         const lastAlertDate = riskScore > 60 ? new Date(Date.now() - randInt(1, 14) * 86400000).toISOString() : null;
 
+        const riskHistory = [riskScore];
+        for(let j=0; j<7; j++) {
+            const prev = riskHistory[0] + randInt(-8, 8);
+            riskHistory.unshift(Math.max(0, Math.min(100, prev)));
+        }
+
         farms.push({
             id: `FARM-${1000 + i}`,
             farmerName: `${randChoice(firstNames)} ${randChoice(lastNames)}`,
@@ -117,7 +124,8 @@ const generateFarms = (count: number): Farm[] => {
             lastAlertDate,
             ndviBaselineDiff: randInt(-30, 5),
             rainfall14Days: randInt(0, 40),
-            tempAnomaly: randFloat(-1, 3.5)
+            tempAnomaly: randFloat(-1, 3.5),
+            riskHistory
         });
     }
     return farms;

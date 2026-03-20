@@ -5,7 +5,7 @@ from typing import Dict, Any
 
 from services.database import save_profile, get_profile
 from services.risk_model import calculate_risk_score
-from services.satellite import get_ndvi, init_gee
+from services.satellite import get_ndvi, get_ndwi, init_gee
 from services.vision import analyze_crop_photo
 
 app = FastAPI(
@@ -55,8 +55,9 @@ async def analyze_photo(file: UploadFile = File(...)):
 @app.get("/satellite/{lat}/{lng}")
 def fetch_satellite_data(lat: float, lng: float):
     # In a real scenario we'd pass dates
-    val = get_ndvi(lat, lng, "2024-01-01", "2024-01-31")
-    return {"ndvi": val}
+    ndvi_val = get_ndvi(lat, lng, "2024-01-01", "2024-01-31")
+    ndwi_val = get_ndwi(lat, lng)
+    return {"ndvi": ndvi_val, "ndwi": ndwi_val}
 
 @app.get("/farm/{id}")
 def get_farm_details(id: str):

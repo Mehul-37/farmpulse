@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, Map, Users, Activity, Bell, FileBarChart, Smartphone, Sprout, Moon, Sun, Camera } from 'lucide-react';
+import { LayoutDashboard, Map, Users, Activity, Bell, FileBarChart, Smartphone, Sprout, Moon, Sun, Camera, Calculator } from 'lucide-react';
 import { useTheme } from '../context/ThemeContext';
 
 const navigation = [
@@ -11,6 +11,7 @@ const navigation = [
     { name: 'Disease Vision AI', to: '/vision', icon: Camera },
     { name: 'Institutional Report', to: '/report', icon: FileBarChart },
     { name: 'Farmer Simulator', to: '/simulator', icon: Smartphone },
+    { name: 'Live Calculator', to: '/calculator', icon: Calculator },
 ];
 
 export default function Sidebar() {

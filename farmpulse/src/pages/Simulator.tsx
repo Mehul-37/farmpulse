@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
-import { CheckCheck, Send, Lock, CheckCircle2, AlertCircle, Droplets, ThermometerSun } from 'lucide-react';
-import { calculateRiskScore, fetchSatelliteData } from '../utils/riskModel';
+import { CheckCheck, Send, Lock, CheckCircle2, AlertCircle, Droplets, ThermometerSun, Flame } from 'lucide-react';
+import { calculateRiskScore, fetchSatelliteData, getDistrictCoords } from '../utils/riskModel';
 
 type Language = 'hi' | 'en';
 
@@ -153,6 +153,12 @@ export default function Simulator() {
     const [satelliteData, setSatelliteData] = useState<any>(null);
     const [riskResult, setRiskResult] = useState<any>(null);
     const [isLiveData, setIsLiveData] = useState(false);
+    const [isInteractive, setIsInteractive] = useState(false);
+    const [customInputs, setCustomInputs] = useState<Record<number, string>>({});
+
+    const isFarmerTurn = visibleMessages.length > 0 && 
+        visibleMessages[visibleMessages.length - 1] < fullConversation.length - 1 && 
+        fullConversation[visibleMessages[visibleMessages.length - 1] + 1].sender === 'farmer';
 
     const chatEndRef = useRef<HTMLDivElement>(null);
 
@@ -191,12 +197,14 @@ export default function Simulator() {
             }, 1500);
             return () => clearTimeout(botDelay);
         } else {
-            // Next message is farmer, wait for 1.2s before auto-playing it 
-            // OR wait for user input (for interactivity)
-            const farmerDelay = setTimeout(() => {
-                setVisibleMessages(prev => [...prev, nextMessage.id]);
-            }, 1200);
-            return () => clearTimeout(farmerDelay);
+            if (!isInteractive) {
+                // Auto-play farmer message
+                const farmerDelay = setTimeout(() => {
+                    setVisibleMessages(prev => [...prev, nextMessage.id]);
+                }, 1200);
+                return () => clearTimeout(farmerDelay);
+            }
+            // If interactive, wait for handleSendMessage execution.
         }
     }, [visibleMessages, unlocked]);
 
@@ -221,29 +229,62 @@ export default function Simulator() {
 
         const nextMessage = fullConversation[lastId + 1];
         if (nextMessage.sender === 'farmer') {
+            if (isInteractive) {
+                setCustomInputs(prev => ({ ...prev, [nextMessage.id]: inputValue.trim() }));
+            }
             // Advance state
             setVisibleMessages(prev => [...prev, nextMessage.id]);
             setInputValue("");
         }
     };
 
+    // Build dynamic farmer profile based on custom inputs or defaults
+    const getValue = (id: number, fallback: string) => customInputs[id] || fallback;
+    
+    const district = getValue(13, "Karnal, Haryana").split(',')[0].trim();
+    
+    const cropType = (() => {
+        const val = getValue(1, "1").toLowerCase();
+        if (val.includes('chawal') || val.includes('rice') || val === '2') return 'rice';
+        if (val.includes('kapas') || val.includes('cotton') || val === '3') return 'cotton';
+        if (val.includes('ganna') || val.includes('sugarcane') || val === '4') return 'sugarcane';
+        if (!['1', 'gehun', 'wheat'].includes(val)) return val;
+        return 'wheat';
+    })();
+    
+    const growthStage = (() => {
+        const val = getValue(3, "3").toLowerCase();
+        if (val.includes('sown') || val === '1') return 'sown';
+        if (val.includes('growing') || val === '2') return 'growing';
+        if (val.includes('harvest') || val === '4') return 'harvesting';
+        if (!['3', 'flower'].some(s => val.includes(s))) return val;
+        return 'flowering';
+    })();
+    
+    const irrigationFrequency = parseInt(getValue(7, "2").replace(/\D/g, '')) || 2;
+    const symptom = getValue(15, "yellowing");
+    const lastCrop = getValue(9, "rice");
+
     const farmerProfile = {
-        district: 'Karnal',
-        cropType: 'wheat',
-        growthStage: 'flowering',
-        irrigationFrequency: 2,
-        symptom: 'yellowing',
-        lastCrop: 'rice',
-        lat: 29.6857,
-        lng: 76.9905
+        district,
+        cropType,
+        growthStage,
+        irrigationFrequency,
+        symptom,
+        lastCrop
     };
 
-    // Fetch real data on initial load
+    // Fetch real data on data change
     useEffect(() => {
         const loadRealData = async () => {
             try {
-                // 1. Fetch real GEE satellite data for Karnal coordinates
-                const satRes = await fetch(`http://localhost:8000/satellite/${farmerProfile.lat}/${farmerProfile.lng}`);
+                // Resolve coords dynamically with API Fallback
+                const coords = await getDistrictCoords(farmerProfile.district);
+                const farmerLat = coords.lat;
+                const farmerLng = coords.lng;
+
+                // 1. Fetch real GEE satellite data for coordinates
+                const satRes = await fetch(`http://localhost:8000/satellite/${farmerLat}/${farmerLng}`);
                 const satData = await satRes.json();
                 
                 // Construct enhanced payload for the backend predict model
@@ -252,10 +293,14 @@ export default function Simulator() {
                 const liveNdvi = satData.ndvi && satData.ndvi !== -1 
                     ? Math.max(satData.ndvi, 0.35) 
                     : 0.45;
+                const liveNdwi = satData.ndwi && satData.ndwi !== -1
+                    ? satData.ndwi
+                    : 0.20; // fallback NDWI
                 
                 const payloadData = {
                     ...fetchSatelliteData(farmerProfile.district), // fallback mock base
                     ndviCurrent: liveNdvi,
+                    ndwiCurrent: liveNdwi,
                     cropType: farmerProfile.cropType,
                     growthStage: farmerProfile.growthStage,
                     irrigationFrequency: farmerProfile.irrigationFrequency,
@@ -311,7 +356,7 @@ export default function Simulator() {
         };
         
         loadRealData();
-    }, []);
+    }, [farmerProfile.district, farmerProfile.cropType, farmerProfile.growthStage, farmerProfile.irrigationFrequency, farmerProfile.symptom, farmerProfile.lastCrop]);
 
     if (!riskResult) {
         return <div className="min-h-screen bg-background text-text-main p-4 flex flex-col items-center justify-center">Loading AI Modules...</div>;
@@ -387,7 +432,11 @@ export default function Simulator() {
                                             ? 'bg-[#005c4b] text-white rounded-tr-none'
                                             : 'bg-surface-2 text-text-main rounded-tl-none border border-border'
                                         }`}>
-                                            {msg[language === 'hi' ? 'textHi' : 'textEn'].split('\n').map((line, j) => (
+                                            {msg.sender === 'farmer' && customInputs[msg.id] 
+                                                ? customInputs[msg.id].split('\n').map((line, j) => (
+                                                    <p key={j} className="mb-0.5 last:mb-0 min-h-[1em] whitespace-pre-wrap">{line}</p>
+                                                ))
+                                                : msg[language === 'hi' ? 'textHi' : 'textEn'].split('\n').map((line, j) => (
                                                 <p key={j} className="mb-0.5 last:mb-0 min-h-[1em] whitespace-pre-wrap">{line}</p>
                                             ))}
                                             <div className="flex items-center justify-end gap-1 mt-1">
@@ -419,23 +468,58 @@ export default function Simulator() {
                         )}
 
                         {/* Input Area */}
-                        <div className="bg-surface-2 p-2.5 flex gap-2 items-center shrink-0 border-t border-border">
+                        <div className="bg-surface-2 p-2.5 flex gap-2 items-center shrink-0 border-t border-border relative">
+                            {isFarmerTurn && isInteractive && (
+                                <div className="absolute -top-7 left-4 bg-[#00A884] text-white text-[10px] px-3 py-1 rounded-full font-bold animate-bounce shadow-md border border-[#00BFA5]">
+                                    Your Turn
+                                    <div className="absolute bottom-[-4px] left-4 w-2 h-2 bg-[#00A884] rotate-45 border-b border-r border-[#00BFA5]"></div>
+                                </div>
+                            )}
                             <input 
                                 type="text"
                                 value={inputValue}
                                 onChange={(e) => setInputValue(e.target.value)}
                                 onKeyDown={(e) => e.key === 'Enter' && handleSendMessage()}
                                 placeholder="Type a message..."
-                                className="flex-1 bg-background rounded-full px-4 py-2.5 text-sm text-text-main focus:outline-none placeholder-text-muted border border-border"
+                                disabled={isInteractive && !isFarmerTurn && visibleMessages.length > 0 && visibleMessages[visibleMessages.length - 1] < fullConversation.length - 1}
+                                className={`flex-1 bg-background rounded-full px-4 py-2.5 text-sm focus:outline-none border transition-colors ${
+                                    isFarmerTurn && isInteractive ? 'border-[#00A884] text-text-main placeholder-[#00A884]/60' : 'border-border text-text-muted placeholder-text-muted/50'
+                                } ${isInteractive && !isFarmerTurn ? 'cursor-not-allowed' : ''}`}
                             />
                             <button 
                                 onClick={handleSendMessage}
-                                className="w-12 h-12 bg-[#00A884] rounded-full flex items-center justify-center text-white shrink-0 hover:bg-[#00BFA5] transition-colors"
+                                disabled={isInteractive && !isFarmerTurn}
+                                className={`w-12 h-12 rounded-full flex items-center justify-center text-white shrink-0 transition-all ${
+                                    isFarmerTurn || !isInteractive ? 'bg-[#00A884] hover:bg-[#00BFA5] scale-100 hover:scale-105' : 'bg-surface-1 border border-border text-text-muted scale-95 cursor-not-allowed'
+                                }`}
                             >
                                 <Send size={20} className="translate-x-[-1px] translate-y-[1px]" />
                             </button>
                         </div>
                     </div>
+                
+                    {/* Interactive Toggle */}
+                    <div className="mt-5 text-center flex justify-center w-full">
+                        <button 
+                            onClick={() => {
+                                setIsInteractive(!isInteractive);
+                                setVisibleMessages([]);
+                                setUnlocked(false);
+                                setRightPanelStage(0);
+                                setCustomInputs({});
+                                setInputValue("");
+                            }}
+                            className={`px-5 py-2.5 rounded-full text-[13px] font-semibold transition-all border flex items-center gap-2.5 shadow-sm hover:scale-105 active:scale-95 ${
+                                isInteractive 
+                                ? 'bg-[#00A884]/10 border-[#00A884]/40 text-[#00A884]' 
+                                : 'bg-surface-1 border-border text-text-muted hover:text-text-main hover:border-text-muted/50'
+                            }`}
+                        >
+                            <div className={`w-2.5 h-2.5 rounded-full ${isInteractive ? 'bg-[#00A884] shadow-[0_0_8px_#00A884] animate-pulse' : 'bg-text-muted/50'}`}></div>
+                            {isInteractive ? 'Interactive Mode: ON' : 'Test with Real Input'}
+                        </button>
+                    </div>
+
                 </div>
 
                 {/* MIDDLE SECTION: AI Understanding */}
@@ -554,6 +638,22 @@ export default function Simulator() {
                                             )}
                                         </div>
                                         <div className="flex justify-between items-center text-sm">
+                                            <span className="text-text-muted flex items-center gap-2"><div className="w-5 text-center">💧</div> NDWI</span>
+                                            {maxMsg >= 14 ? (
+                                                <div className="flex items-center gap-2">
+                                                    <span className={`text-[10px] px-1.5 py-0.5 rounded border whitespace-nowrap font-bold ${isLiveData ? 'bg-[#22C55E]/20 text-[#22C55E] border-[#22C55E]/30' : 'bg-[#F59E0B]/20 text-[#F59E0B] border-[#F59E0B]/30'}`}>
+                                                        {isLiveData ? '● LIVE GEE' : '○ FALLBACK'}
+                                                    </span>
+                                                    <span className={`font-medium animate-in fade-in slide-in-from-bottom-1 ${(riskResult.ndwiCurrent ?? 0.3) < 0.1 ? 'text-[#EF4444]' : 'text-[#3B82F6]'}`}>
+                                                        {(riskResult.ndwiCurrent ?? 0.20).toFixed(3)}
+                                                        {(riskResult.ndwiCurrent ?? 0.3) < 0.1 ? ' ⚠️' : ''}
+                                                    </span>
+                                                </div>
+                                            ) : (
+                                                <span className="text-text-muted/40 font-mono text-[11px] animate-pulse">awaiting location...</span>
+                                            )}
+                                        </div>
+                                        <div className="flex justify-between items-center text-sm">
                                             <span className="text-text-muted flex items-center gap-2"><div className="w-5 text-center">🌧️</div> Rainfall Data</span>
                                             {maxMsg >= 14 ? (
                                                 <span className="text-[#EF4444] font-medium animate-in fade-in slide-in-from-bottom-1">{satelliteData.rainfallActual}mm (-{Math.round(riskResult.rainfallDeficit * 100)}%)</span>
@@ -575,7 +675,7 @@ export default function Simulator() {
 
                     <div className="flex items-center gap-2 mt-1 px-1">
                         <div className={`w-1.5 h-1.5 rounded-full ${isLiveData ? 'bg-[#10B981]' : 'bg-[#F59E0B]'} animate-pulse`}></div>
-                        <span className="text-text-muted text-[11px] font-medium uppercase tracking-wide">12 Parameters • 3 Satellite Signals • {isLiveData ? 'Live via Google Earth Engine' : 'Fallback mode (GEE API propagating)'}</span>
+                        <span className="text-text-muted text-[11px] font-medium uppercase tracking-wide">17 Parameters • 4 Satellite Signals • {isLiveData ? 'Live via Google Earth Engine' : 'Fallback mode (GEE API propagating)'}</span>
                     </div>
                 </div>
 
@@ -645,6 +745,15 @@ export default function Simulator() {
                                 </div>
                                 <div className="h-2 w-full bg-[#1A1A1A] rounded-full overflow-hidden">
                                     <div className="h-full bg-[#EF4444] rounded-full transition-all duration-1000 delay-300 ease-out" style={{ width: rightPanelStage >= 2 ? `${riskResult.stressTypes.pestRisk}%` : '0%' }}></div>
+                                </div>
+                            </div>
+                            <div className="relative">
+                                <div className="flex mb-1.5 items-center justify-between text-sm">
+                                    <div className="text-text-main flex items-center gap-2"><Flame size={16} className="text-[#F97316]"/> Heat Stress</div>
+                                    <div className="text-[#F97316] font-bold">{riskResult.stressTypes.heatStress}%</div>
+                                </div>
+                                <div className="h-2 w-full bg-[#1A1A1A] rounded-full overflow-hidden">
+                                    <div className="h-full bg-[#F97316] rounded-full transition-all duration-1000 delay-500 ease-out" style={{ width: rightPanelStage >= 2 ? `${riskResult.stressTypes.heatStress}%` : '0%' }}></div>
                                 </div>
                             </div>
                         </div>
